@@ -43,10 +43,12 @@ Instead, wrapping the `claude` binary in a process-scoped shell function (`claud
 └─────────────┬─────────────┘                               └─────────────┬─────────────┘
               │                                                           │
               ▼                                                           ▼
-  [https://api.anthropic.com](https://api.anthropic.com)                                   http://localhost:11434
-     (Anthropic Cloud)                                        (Ollama Local Server)
+  [https://api.anthropic.com]                                  http://localhost:11434
+  (https://api.anthropic.com)
+     (Anthropic Cloud)                                         (Ollama Local Server)
                                                                           │
-                                                                          ▼ (Exit Hook / Trap)
+                                                                          ▼
+                                                                  (Exit Hook / Trap)
                                                               `ollama stop <model>` → 0 MB VRAM
 ```
 
