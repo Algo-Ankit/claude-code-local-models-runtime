@@ -17,6 +17,7 @@ This guide uses **`qwen3.5:9b`** on a 6 GB VRAM / 16 GB RAM machine as its concr
 5. [Hardware-Tiered Model Recommendations](#5-hardware-tiered-model-recommendations)
 6. [Troubleshooting & OS Edge Cases (Including Windows OneDrive)](#6-troubleshooting--os-edge-cases-including-windows-onedrive)
 7. [Clean Uninstall (Zero-Trace Removal)](#7-clean-uninstall-zero-trace-removal)
+8. [Repository Automation for This Open-Source Runtime](#8-repository-automation-for-this-open-source-runtime)
 
 ---
 
@@ -479,3 +480,49 @@ rm -rf "$HOME/.claude-local"
 
 # 3. Remove the `claude-local()` function and `OLLAMA_*` exports from ~/.zshrc or ~/.bashrc
 ```
+
+---
+
+## 8. Repository Automation for This Open-Source Runtime
+
+This repository includes ready-to-run wrappers and installers so you can install the tutorial above without copying large cloud configuration directories.
+
+### Cross-platform wrappers
+
+- `wrappers/claude-local.ps1` loads the isolated function into PowerShell and uses `try`/`finally` for environment cleanup and `ollama stop`.
+- `wrappers/claude-local.bat` provides a zero-profile Windows launch path using `setlocal`.
+- `wrappers/claude-local.sh` provides POSIX shell cleanup through `EXIT`, `INT`, and `TERM` traps.
+
+All wrappers default to `qwen3.5:9b`, honor `OLLAMA_HOST` when supported, and launch Claude Code with:
+
+```text
+~/.claude-local  as CLAUDE_CONFIG_DIR
+http://$OLLAMA_HOST as ANTHROPIC_BASE_URL
+ollama as ANTHROPIC_AUTH_TOKEN
+empty ANTHROPIC_API_KEY
+```
+
+### Automated installation
+
+On Windows PowerShell:
+
+```powershell
+.\install.ps1
+```
+
+On macOS or Linux:
+
+```bash
+chmod +x install.sh wrappers/claude-local.sh
+./install.sh
+exec "$SHELL" -l
+```
+
+The installers verify that both `claude` and `ollama` are available, create only `~/.claude-local` and `~/.claude-local/commands`, set `OLLAMA_CONTEXT_LENGTH=32768`, copy the bundled templates when targets are absent, and register the wrapper in the appropriate shell startup file. They never copy or modify `~/.claude`.
+
+### Bundled templates
+
+- `templates/CLAUDE.md` adds local-model context guardrails.
+- `templates/commands/review-diff.md` defines the isolated `/review-diff` command.
+
+These files make the runtime suitable for open-source tutorials, local coding agents, and repeatable community setups. Because the launch mechanism is process-scoped, users can switch from a paid Anthropic session to Ollama without changing credentials or global configuration.
