@@ -20,7 +20,17 @@ This guide uses **`qwen3.5:9b`** on a 6 GB VRAM / 16 GB RAM machine as its concr
 
 2. [The Math: Context Budgets & Memory Sizing](#2-the-math-context-budgets--memory-sizing)
 
+   - [A. Why OLLAMA_CONTEXT_LENGTH=32768 Is the Hard Floor](#a-why-ollama_context_length32768-is-the-hard-floor)
+
+   - [B. VRAM & System RAM Footprint Equations](#b-vram--system-ram-footprint-equations)
+
+   - [C. Worked Example: qwen3.5:9b on 6 GB VRAM](#c-worked-example-qwen359b-q4_k_m--32k-context-on-6-gb-vram--16-gb-ram)
+
+   - [D. The MCP (Model Context Protocol) Token Tax & Overhead](#d-the-mcp-model-context-protocol-token-tax--overhead)
+
 3. [Step-by-Step Installation & Setup](#3-step-by-step-installation--setup)
+
+   - [Quick Start: Automated One-Line Setup (Recommended)](#quick-start-automated-one-line-setup-recommended)
 
    - [Prerequisites & GPU Check](#prerequisites--gpu-check)
 
@@ -205,9 +215,52 @@ $$\text{Memory}_{\text{total}} = \text{VRAM}_{\text{weights}} + \text{VRAM}_{\te
 
 
 
+### D. The MCP (Model Context Protocol) Token Tax & Overhead
+
+Claude Code supports Model Context Protocol (MCP) servers (e.g., GitHub, SQLite, Postgres, Puppeteer). While powerful in cloud environments, **each connected MCP server injects full JSON schemas for every tool into the static system prompt**:
+
+* **Baseline CLI tools:** ~12,000–15,000 tokens.
+* **Adding 2–3 active MCP servers:** Pushes static prompt overhead to **22,000–26,000+ tokens**.
+
+In a 32K context window, 25K of static schema overhead leaves **less than 7,000 tokens** for actual repository file reads, conversation history, and model reasoning—causing rapid context saturation or tool hallucinations.
+
+**Local MCP Best Practices:**
+1. **Audit active tools:** Type `/mcp` inside your session to see connected servers.
+2. **Keep local profiles clean:** Keep heavy third-party MCP servers inside your global cloud profile (`~/.claude`), while reserving `~/.claude-local` for essential local tools or targeted databases.
+3. **Prefer native CLI over MCP for local sessions:** Let the model execute `git`, `curl`, or database queries directly via `Bash` rather than permanent MCP tool schemas when memory is constrained.
+
+
+
 ## 3. Step-by-Step Installation & Setup
 
 
+
+### Quick Start: Automated One-Line Setup (Recommended)
+
+If you want to get started immediately without manually editing shell configuration files or registry keys, run the automated bootstrap installer:
+
+#### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/Algo-Ankit/claude-code-local-models-runtime/main/install.ps1 | iex
+```
+
+#### macOS / Linux (Bash / Zsh)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Algo-Ankit/claude-code-local-models-runtime/main/install.sh | bash
+```
+
+*What the installer does automatically:*
+1. Verifies that `ollama` and `claude` CLIs are installed.
+2. Sets `OLLAMA_CONTEXT_LENGTH=32768`, `OLLAMA_FLASH_ATTENTION=1`, and `OLLAMA_KV_CACHE_TYPE=q8_0`.
+3. Pulls `qwen3.5:9b`.
+4. Creates the isolated `~/.claude-local` profile with guardrails.
+5. Injects the `claude-local` function into your shell startup script.
+
+---
+
+### Manual Step-by-Step Installation
+
+If you prefer to configure everything manually or inspect each step yourself, follow the instructions below:
 
 ### Prerequisites & GPU Check
 
@@ -525,17 +578,39 @@ Smaller local models (`4B-14B`) lose accuracy if large files flood their 32K con
 
        $DefaultModel = "qwen3.5:9b"
 
-       if ($args.Count -gt 0 -and -not ($args[0].ToString().StartsWith("-"))) {
+       $Model = $DefaultModel
 
-           $Model = $args[0]
+       $RemainingArgs = @()
 
-           $RemainingArgs = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
 
-       } else {
 
-           $Model = $DefaultModel
+       if ($args.Count -gt 0) {
 
-           $RemainingArgs = $args
+           $first = $args[0].ToString()
+
+           if ($first -eq "--fast") {
+
+               $Model = "qwen3.5:4b"
+
+               if ($args.Count -gt 1) { $RemainingArgs = $args[1..($args.Count - 1)] }
+
+           } elseif ($first -eq "--heavy") {
+
+               $Model = "qwen3-coder:30b"
+
+               if ($args.Count -gt 1) { $RemainingArgs = $args[1..($args.Count - 1)] }
+
+           } elseif (-not ($first.StartsWith("-"))) {
+
+               $Model = $first
+
+               if ($args.Count -gt 1) { $RemainingArgs = $args[1..($args.Count - 1)] }
+
+           } else {
+
+               $RemainingArgs = $args
+
+           }
 
        }
 
@@ -619,21 +694,35 @@ If you prefer **not** to create a PowerShell `$PROFILE` or change `ExecutionPoli
 
 setlocal
 
-set "MODEL=%~1"
 
-if "%MODEL%"=="" (
 
-    set "MODEL=qwen3.5:9b"
+set "MODEL=qwen3.5:9b"
 
-) else if "%MODEL:~0,1%"=="-" (
+if not "%~1"=="" (
 
-    set "MODEL=qwen3.5:9b"
+    if "%~1"=="--fast" (
 
-) else (
+        set "MODEL=qwen3.5:4b"
 
-    shift
+        shift
+
+    ) else if "%~1"=="--heavy" (
+
+        set "MODEL=qwen3-coder:30b"
+
+        shift
+
+    ) else if not "%~1:~0,1%"=="-" (
+
+        set "MODEL=%~1"
+
+        shift
+
+    )
 
 )
+
+
 
 if "%OLLAMA_HOST%"=="" (
 
@@ -645,6 +734,8 @@ if "%OLLAMA_HOST%"=="" (
 
 )
 
+
+
 set "CLAUDE_CONFIG_DIR=%USERPROFILE%\.claude-local"
 
 set "ANTHROPIC_BASE_URL=http://%OLLAMA_HOST_ADDR%"
@@ -653,7 +744,9 @@ set "ANTHROPIC_AUTH_TOKEN=ollama"
 
 set "ANTHROPIC_API_KEY="
 
-claude --model %MODEL% %1 %2 %3 %4 %5 %6 %7 %8 %9
+
+
+claude --model %MODEL% %*
 
 ollama stop %MODEL% >nul 2>&1
 
@@ -681,11 +774,27 @@ ollama stop %MODEL% >nul 2>&1
 
        local model="qwen3.5:9b"
 
-       if [ $# -gt 0 ] && [[ "$1" != -* ]]; then
+       if [ $# -gt 0 ]; then
 
-           model="$1"
+           if [ "$1" = "--fast" ]; then
 
-           shift
+               model="qwen3.5:4b"
+
+               shift
+
+           elif [ "$1" = "--heavy" ]; then
+
+               model="qwen3-coder:30b"
+
+               shift
+
+           elif [[ "$1" != -* ]]; then
+
+               model="$1"
+
+               shift
+
+           fi
 
        fi
 
@@ -757,56 +866,49 @@ ollama stop %MODEL% >nul 2>&1
 
 1. **Onboarding Prompts:** The very first time you run `claude-local`, Claude Code initializes `~/.claude-local` and asks you to pick a terminal color theme and confirm whether you trust the current project folder. Press **Enter** through both prompts—your choices are saved inside `~/.claude-local` so you won't be asked again.
 
-2. **Cold-Start Model Loading Delay (5–20 Seconds):** When you send your **first message** in a session, the terminal may appear to pause for 5–20 seconds before streaming a reply. **Do not press `Ctrl + C`**—Ollama is loading the 6+ GB model weights from your SSD into GPU VRAM and allocating the 32K KV cache. Every subsequent message in that session will respond immediately.
+2. **Cold-Start Weights Loading & Prompt Prefill Delay (10–30 Seconds):**
+   * **Weights Load:** When you launch, Ollama loads model weights from disk to GPU VRAM (~5–10 seconds).
+   * **Prompt Ingestion (Prefill):** On your **first prompt**, Claude Code injects ~12,000–15,000 tokens of system prompts and tool schemas. On GPUs with partial offloading (e.g. 6 GB VRAM offloaded to RAM), ingesting 15K tokens takes **10–25 seconds of compute before the first character streams** (Time To First Token / TTFT).
+   * **Do not press `Ctrl + C`:** The process has not hung or deadlocked. Once prompt prefill finishes, token generation streams rapidly. Subsequent turns in the same session respond much faster thanks to KV cache reuse.
+   * *Tip:* Setting `OLLAMA_FLASH_ATTENTION=1` drastically reduces prefill latency.
 
 3. **Live Verification (`ollama ps`):** While `claude-local` is running, open a second terminal window and run:
 
    ```bash
-
    ollama ps
-
    ```
 
    Check two columns in the output:
-
    * **`CONTEXT`:** Should read `32768` (confirms your 32K context setting is active).
-
    * **`PROCESSOR`:** Should show GPU acceleration (e.g., `100% GPU` or `80%/20% CPU/GPU` on 6 GB VRAM).
 
 
 
-### Launching Any Model
+### Preset Model Shortcuts & Custom Models
+
+The wrapper includes built-in shortcuts for fast iteration vs. deep reasoning:
 
 ```bash
-
-# Launch with the default model (qwen3.5:9b)
-
+# Launch with the default reference model (qwen3.5:9b)
 claude-local
 
+# Fast Mode: Launches qwen3.5:4b (ultra-fast responses for simple scripts & questions)
+claude-local --fast
 
+# Heavy Mode: Launches qwen3-coder:30b (higher reasoning for multi-file refactors)
+claude-local --heavy
 
-# Pass flags directly using the default model (no need to type the model name first)
-
+# Pass flags directly using the default model (no need to type model tag first)
 claude-local --resume
-
 claude-local -p "Explain the folder structure of this repo"
 
-
-
 # Swap to any other pulled local model on the fly
-
 claude-local gemma4:12b
-
 claude-local devstral-small-2
-
 claude-local qwen3-coder:30b
 
-
-
 # Pass standard Claude Code flags with an explicit model tag
-
 claude-local qwen3.5:9b -p "Write a binary search function in C++ with unit tests"
-
 ```
 
 

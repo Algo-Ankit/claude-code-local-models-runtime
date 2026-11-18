@@ -1,13 +1,22 @@
 claude-local() {
-    model="${1:-qwen3.5:9b}"
-    if [ "$#" -gt 0 ]; then
-        shift
+    local model="qwen3.5:9b"
+    if [ $# -gt 0 ]; then
+        if [ "$1" = "--fast" ]; then
+            model="qwen3.5:4b"
+            shift
+        elif [ "$1" = "--heavy" ]; then
+            model="qwen3-coder:30b"
+            shift
+        elif [[ "$1" != -* ]]; then
+            model="$1"
+            shift
+        fi
     fi
 
-    ollama_host="${OLLAMA_HOST:-localhost:11434}"
+    local ollama_host="${OLLAMA_HOST:-localhost:11434}"
 
     cleanup() {
-        status=$?
+        local status=$?
         unset CLAUDE_CONFIG_DIR ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY
         ollama stop "$model" >/dev/null 2>&1 || true
         return "$status"
@@ -23,10 +32,9 @@ claude-local() {
     export ANTHROPIC_API_KEY=""
 
     claude --model "$model" "$@"
-    status=$?
+    local status=$?
 
     trap - EXIT INT TERM
-    unset CLAUDE_CONFIG_DIR ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY
-    ollama stop "$model" >/dev/null 2>&1 || true
+    cleanup
     return "$status"
 }

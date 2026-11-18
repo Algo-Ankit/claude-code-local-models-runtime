@@ -1,10 +1,23 @@
 function claude-local {
-    [CmdletBinding()]
-    param(
-        [string]$Model = "qwen3.5:9b",
-        [Parameter(ValueFromRemainingArguments = $true)]
-        $RemainingArgs
-    )
+    $DefaultModel = "qwen3.5:9b"
+    $Model = $DefaultModel
+    $RemainingArgs = @()
+
+    if ($args.Count -gt 0) {
+        $first = $args[0].ToString()
+        if ($first -eq "--fast") {
+            $Model = "qwen3.5:4b"
+            if ($args.Count -gt 1) { $RemainingArgs = $args[1..($args.Count - 1)] }
+        } elseif ($first -eq "--heavy") {
+            $Model = "qwen3-coder:30b"
+            if ($args.Count -gt 1) { $RemainingArgs = $args[1..($args.Count - 1)] }
+        } elseif (-not ($first.StartsWith("-"))) {
+            $Model = $first
+            if ($args.Count -gt 1) { $RemainingArgs = $args[1..($args.Count - 1)] }
+        } else {
+            $RemainingArgs = $args
+        }
+    }
 
     $ollamaHost = if ($env:OLLAMA_HOST) { $env:OLLAMA_HOST } else { "localhost:11434" }
 
